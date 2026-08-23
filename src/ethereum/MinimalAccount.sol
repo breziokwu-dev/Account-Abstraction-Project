@@ -15,6 +15,8 @@ contract MinimalAccount is IAccount, Ownable {
     IEntryPoint private immutable i_entryPoint;
 
     error MinimalAccount__NotFromEntryPoint();
+    error MinimalAccount__NotFromEntryPointOrOwner();
+    error MinimalAccount__CallFailed(bytes result); 
 
     modifier requireFromEntryPoint() {
         if(msg.sender != address(i_entryPoint)) {
@@ -23,9 +25,18 @@ contract MinimalAccount is IAccount, Ownable {
         _;
     }
 
+    modifier requireFromEntryPointOrOwner() {
+        if(msg.sender != address(i_entryPoint) && msg.sender != owner()) {
+            revert MinimalAccount__NotFromEntryPointOrOwner();
+        }
+        _;
+    }
+
     constructor(address entryPoint) Ownable(msg.sender) {
         i_entryPoint = IEntryPoint(entryPoint);
     }
+
+    receive() external payable {}
 
     function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds) external override returns (uint256 validationData) {
         // This is a minimal implementation, so we don't perform any actual validation.
@@ -33,6 +44,13 @@ contract MinimalAccount is IAccount, Ownable {
         validationData = _validateSignature(userOp, userOpHash);
         _payPrefund(missingAccountFunds);
         return validationData;
+    }
+
+    function execute(address dest, uint256 value, bytes calldata functionData) external requireFromEntryPointOrOwner {
+        (bool success, bytes memory result) = dest.call{value: value}(functionData);
+        if(!success) {
+            revert MinimalAccount__CallFailed(result);
+        }
     }
 
     function _validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash) internal view returns (uint256 validationData) {
